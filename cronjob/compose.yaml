@@ -1,0 +1,44 @@
+name: kinny-content
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: kinny_content
+      POSTGRES_USER: kinny
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kinny-local}
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kinny -d kinny_content"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  importer:
+    build: .
+    environment: &import-environment
+      PGHOST: db
+      PGDATABASE: kinny_content
+      PGUSER: kinny
+      PGPASSWORD: ${POSTGRES_PASSWORD:-kinny-local}
+      IMPORT_USER_AGENT: ${IMPORT_USER_AGENT:-KinnyStoryLocal/0.1 (local development)}
+      REQUEST_DELAY: ${REQUEST_DELAY:-2}
+      MAX_ITEMS: ${MAX_ITEMS:-5}
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["--sample"]
+  scheduler:
+    profiles: ["schedule"]
+    build: .
+    environment:
+      <<: *import-environment
+      CRON_SCHEDULE: ${CRON_SCHEDULE:-17 19 * * *}
+    depends_on:
+      db:
+        condition: service_healthy
+    entrypoint: ["python", "/app/scheduler.py"]
+    restart: unless-stopped
+volumes:
+  postgres-data:
